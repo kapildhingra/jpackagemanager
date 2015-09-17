@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="Package Manager">
+
+	<!-- ======================================================================================== -->
+	<!-- EXAMPLE USAGE: -->
+	<!-- ant package.install -DpackageFile=package-wfm-jboss-7.1.1.zip -DtargetDir=target -DdataDir=data -Dconfig=env.properties -->
+    <!-- ======================================================================================== -->
+	
+    <property file="env.properties" />
+
+    <taskdef name="createPackage" classname="com.virtualparadigm.packman.ant.CreatePackageTask"  classpath="lib/package-manager-1.0-SNAPSHOT-jar-with-dependencies.jar" />
+    <taskdef name="installPackage" classname="com.virtualparadigm.packman.ant.InstallPackageTask"  classpath="lib/package-manager-1.0-SNAPSHOT-jar-with-dependencies.jar" />
+    <taskdef name="listPackages" classname="com.virtualparadigm.packman.ant.ListPackagesTask"  classpath="lib/package-manager-1.0-SNAPSHOT-jar-with-dependencies.jar" />
+	
+    <!-- ================================================= -->
+    <!-- INSTALL PACKAGE TARGETS -->
+    <!-- ================================================= -->
+	
+    <target name="package.install" description="package.install">
+    	
+    	<installPackage 
+    		packageFile="${packageFile}" 
+    		targetDir="${targetDir}" 
+    		dataDir="${dataDir}" 
+    		conifig="${conifig}"/>
+    	
+    </target>
+
+    <target name="package.list" description="package.list">
+        <listPackages />
+    </target>
+	
+</project>
