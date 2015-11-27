@@ -6,20 +6,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBElement;
@@ -33,21 +27,28 @@ import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.exec.CommandLine;
 import org.apache.commons.exec.DefaultExecutor;
-import org.apache.commons.exec.environment.EnvironmentUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.DirectoryFileFilter;
 import org.apache.commons.io.filefilter.SuffixFileFilter;
 import org.apache.commons.lang.text.StrSubstitutor;
+import org.apache.velocity.Template;
+import org.apache.velocity.VelocityContext;
+import org.apache.velocity.app.VelocityEngine;
+import org.apache.velocity.runtime.resource.loader.StringResourceLoader;
+import org.apache.velocity.runtime.resource.util.StringResourceRepository;
+import org.apache.velocity.tools.ToolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.stringtemplate.v4.ST;
+import org.stringtemplate.v4.STGroup;
 
 import com.virtualparadigm.packman.util.ZipUtils;
 import com.virtualparadigm.patch.processor.JPatchManager;
 
-public class JPackageManager
+public class JPackageManagerOld
 {
-	private static Logger logger = LoggerFactory.getLogger(JPackageManager.class);
+	private static Logger logger = LoggerFactory.getLogger(JPackageManagerOld.class);
 	
     //PACKAGE != PATCH
     // packages do contain patch along with other stuff
@@ -65,23 +66,16 @@ public class JPackageManager
     private static final String PATCH_FILES_DIR_NAME = "patch-files";
     private static final String AUTORUN_DIR_NAME = "autorun";
     private static final String INSTALL_DIR_NAME = "install";
-    
-    private static final String INSTALL_PRE_DIR_NAME = "pre";
-    private static final String INSTALL_POST_DIR_NAME = "post";
-    
     private static final String UNINSTALL_DIR_NAME = "uninstall";
     private static final String ARCHIVE_DIR_NAME = "archive";
     
     private static final String PACKAGE_NAME_KEY = "package.name";
     private static final String PACKAGE_VERSION_KEY = "package.version";
     
-    private static final String RUNTIME_TEMP_DIR_KEY = "JPM_TEMP_DIR";
-    private static final String RUNTIME_DEST_DIR_KEY = "JPM_DEST_DIR";
-    private static final String RUNTIME_WORKING_DIR_KEY = "JPM_WORKING_DIR";
-    private static final String RUNTIME_TOOL_ROOT_DIR_KEY = "JPM_TOOL_ROOT_DIR";
+    private static final String CURRENT_TEMPLATE_NAME = "template";
     
-    private static final SuffixFileFilter TEMPLATE_SUFFIX_FILE_FILTER = new SuffixFileFilter(new String[]{"xml", "properties", "sh", "bat", "conf", "pl", "groovy", "py", "php"});
-//    private static final SuffixFileFilter TEMPLATE_SUFFIX_FILE_FILTER = new SuffixFileFilter(new String[]{"xml", "properties", "sh", "bat"});
+    private static final SuffixFileFilter TEMPLATE_SUFFIX_FILE_FILTER = new SuffixFileFilter(new String[]{"xml", "properties", "sh", "bat"});
+    private static final STGroup ST_GROUP = new STGroup('$', '$');
     
     
     private static JAXBContext jaxbContext;
@@ -99,7 +93,7 @@ public class JPackageManager
         }
         
         installedPackageMap = new HashMap<String, Package>();
-        Collection<Package> installPackages = JPackageManager.unmarshallFromFile(JPackageManager.PACKAGE_MANAGER_DATA_DIR_NAME + "/" + PACKAGE_FILE_NAME);
+        Collection<Package> installPackages = JPackageManagerOld.unmarshallFromFile(JPackageManagerOld.PACKAGE_MANAGER_DATA_DIR_NAME + "/" + PACKAGE_FILE_NAME);
         if(installPackages != null)
         {
             for(Package installedPackage : installPackages)
@@ -114,12 +108,12 @@ public class JPackageManager
     // ======================================================================
     public static Collection<Package> listPackages()
     {
-    	return JPackageManager.findInstalledPackages();
+    	return JPackageManagerOld.findInstalledPackages();
     }
     
     public static VersionNumber getPackageVersion(String packageName)
     {
-    	return JPackageManager.getInstalledVersionNumber(packageName);
+    	return JPackageManagerOld.getInstalledVersionNumber(packageName);
     }
     
     // ======================================================================
@@ -136,13 +130,13 @@ public class JPackageManager
                 tempDir = new File(TEMP_CREATE_PACKAGE_DIR_NAME);
         	}
         	
-            File tempMetadataDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.METADATA_DIR_NAME);
-            File tempPatchDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME);
-            File tempPatchFilesDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME + "/" + JPackageManager.PATCH_FILES_DIR_NAME);
+            File tempMetadataDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.METADATA_DIR_NAME);
+            File tempPatchDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME);
+            File tempPatchFilesDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILES_DIR_NAME);
 
-            File tempAutorunDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME);
-            File tempAutorunInstallDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME + "/" + JPackageManager.INSTALL_DIR_NAME);
-            File tempAutorunUninstallDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME + "/" + JPackageManager.UNINSTALL_DIR_NAME);
+            File tempAutorunDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME);
+            File tempAutorunInstallDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME + "/" + JPackageManagerOld.INSTALL_DIR_NAME);
+            File tempAutorunUninstallDir = new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME + "/" + JPackageManagerOld.UNINSTALL_DIR_NAME);
             
             tempMetadataDir.mkdirs();
             tempPatchFilesDir.mkdirs();
@@ -156,8 +150,8 @@ public class JPackageManager
                 FileUtils.copyDirectory(autorunInstallDir, tempAutorunInstallDir, true);
                 FileUtils.copyDirectory(autorunUninstallDir, tempAutorunUninstallDir, true);
                 
-                String strPackageProperties = JPackageManager.PACKAGE_NAME_KEY + "=" + packageName + "\n" + JPackageManager.PACKAGE_VERSION_KEY + "=" + packageVersion;
-                FileUtils.writeStringToFile(new File(tempMetadataDir.getAbsolutePath() + "/" + JPackageManager.PACKAGE_PROPERTIES_FILE_NAME), strPackageProperties, "UTF-8");
+                String strPackageProperties = JPackageManagerOld.PACKAGE_NAME_KEY + "=" + packageName + "\n" + JPackageManagerOld.PACKAGE_VERSION_KEY + "=" + packageVersion;
+                FileUtils.writeStringToFile(new File(tempMetadataDir.getAbsolutePath() + "/" + JPackageManagerOld.PACKAGE_PROPERTIES_FILE_NAME), strPackageProperties, "UTF-8");
                 
                 JPatchManager directoryPatchManager = new JPatchManager();
 //                directoryPatchManager.makePatch(oldStateDir, newStateDir, new File(tempPatchDir.getAbsolutePath() + "/" + JPackageManager.PATCH_FILE_NAME), tempPatchFilesDir);
@@ -178,7 +172,7 @@ public class JPackageManager
             
             if(!developmentMode)
             {
-                JPackageManager.cleanup(tempDir);
+                JPackageManagerOld.cleanup(tempDir);
             }
             
         }
@@ -195,46 +189,31 @@ public class JPackageManager
         boolean status = false;
         if(packageFile != null)
         {
-            File tempDir = JPackageManager.prepare(packageFile, packageManagerDataDir);
+            File tempDir = JPackageManagerOld.prepare(packageFile, packageManagerDataDir);
             
-            Properties packageProperties = JPackageManager.validate(tempDir);
+            Properties packageProperties = JPackageManagerOld.validate(tempDir);
             
             if(packageProperties != null)
             {
-                JPackageManager.configure(tempDir, localConfigurationFile);
-
-                File autorunPreDir = new File(tempDir.getAbsolutePath() + "/" + AUTORUN_DIR_NAME + "/" + INSTALL_DIR_NAME + "/" + INSTALL_PRE_DIR_NAME);
-                File autorunPostDir = new File(tempDir.getAbsolutePath() + "/" + AUTORUN_DIR_NAME + "/" + INSTALL_DIR_NAME + "/" + INSTALL_POST_DIR_NAME);
-                
-                Map<String, String> environmentVariableMap = null;
+                Configuration configuration = null;
                 try
                 {
-                    environmentVariableMap = (Map<String, String>)EnvironmentUtils.getProcEnvironment();
-                    environmentVariableMap.put(JPackageManager.RUNTIME_TEMP_DIR_KEY, tempDir.getAbsolutePath());
-                    environmentVariableMap.put(JPackageManager.RUNTIME_DEST_DIR_KEY, targetRootDir.getAbsolutePath());
-                    environmentVariableMap.put(JPackageManager.RUNTIME_WORKING_DIR_KEY, System.getProperty("user.dir"));
-                    try
-                    {
-                        environmentVariableMap.put(JPackageManager.RUNTIME_TOOL_ROOT_DIR_KEY, new File(JPackageManager.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath()).getParentFile().getAbsolutePath());
-                    }
-                    catch(URISyntaxException urie)
-                    {
-                    	logger.error("", urie);
-                    }
+                    configuration = new PropertiesConfiguration(localConfigurationFile);
                 }
-                catch(IOException ioe)
+                catch(ConfigurationException ce)
                 {
-                	logger.error("", ioe);
+                    ce.printStackTrace();
                 }
+
+//                JPackageManager.configure(tempDir, configuration);
+//                JPackageManager.configureOld(tempDir, configuration);
+                JPackageManagerOld.configureCommons(tempDir, configuration);
                 
-                JPackageManager.autorun(autorunPreDir, environmentVariableMap);
+                JPackageManagerOld.deploy(targetRootDir, tempDir);
                 
-                JPackageManager.deploy(targetRootDir, tempDir);
+                JPackageManagerOld.autorun(new File(tempDir.getAbsolutePath() + "/" + AUTORUN_DIR_NAME + "/" + INSTALL_DIR_NAME));
                 
-                JPackageManager.autorun(autorunPostDir, environmentVariableMap);
-//                JPackageManager.autorun(new File(tempDir.getAbsolutePath() + "/" + AUTORUN_DIR_NAME + "/" + INSTALL_DIR_NAME));
-                
-                JPackageManager.finalize(
+                JPackageManagerOld.finalize(
                     packageProperties.getProperty(PACKAGE_NAME_KEY), 
                     packageProperties.getProperty(PACKAGE_VERSION_KEY), 
                     packageManagerDataDir, 
@@ -245,8 +224,9 @@ public class JPackageManager
             
             if(!developmentMode)
             {
-                JPackageManager.cleanup(tempDir);
+                JPackageManagerOld.cleanup(tempDir);
             }
+            
         }
         return status;
     }
@@ -288,7 +268,7 @@ public class JPackageManager
         InputStream packagePropInputStream = null;
         try
         {
-            packagePropInputStream = new FileInputStream(new File(tempDir.getAbsolutePath() + "/" + JPackageManager.METADATA_DIR_NAME + "/" +  JPackageManager.PACKAGE_PROPERTIES_FILE_NAME));
+            packagePropInputStream = new FileInputStream(new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.METADATA_DIR_NAME + "/" +  JPackageManagerOld.PACKAGE_PROPERTIES_FILE_NAME));
             packageProperties.load(packagePropInputStream);
             logger.info("  loaded package properties.");
         }
@@ -311,10 +291,10 @@ public class JPackageManager
             }
         }
 
-        if(packageProperties.containsKey(JPackageManager.PACKAGE_NAME_KEY) && packageProperties.containsKey(JPackageManager.PACKAGE_VERSION_KEY))
+        if(packageProperties.containsKey(JPackageManagerOld.PACKAGE_NAME_KEY) && packageProperties.containsKey(JPackageManagerOld.PACKAGE_VERSION_KEY))
         {
             VersionNumber installedVersionNumber = null;
-            Package installPackage = JPackageManager.findInstalledPackage(packageProperties.getProperty(PACKAGE_NAME_KEY));
+            Package installPackage = JPackageManagerOld.findInstalledPackage(packageProperties.getProperty(PACKAGE_NAME_KEY));
             if (installPackage == null)
             {
                 installedVersionNumber = new VersionNumber("0");
@@ -323,7 +303,7 @@ public class JPackageManager
             {
                 installedVersionNumber = installPackage.getVersionNumber();
             }
-            if(installedVersionNumber.compareTo(new VersionNumber(packageProperties.getProperty(JPackageManager.PACKAGE_VERSION_KEY))) >= 0)
+            if(installedVersionNumber.compareTo(new VersionNumber(packageProperties.getProperty(JPackageManagerOld.PACKAGE_VERSION_KEY))) >= 0)
             {
             	logger.info("  installed version is more recent.");
                 //installed version greater than or equal to package to install
@@ -340,87 +320,297 @@ public class JPackageManager
     }
     
     
-    public static boolean configure(File tempDir, File localConfigurationFile)
+    public static boolean configure(File tempDir, Configuration configuration)
     {
-    	logger.info("PackageManager::configure()");
+    	logger.info("PackageManager::configure()");   
         boolean status = true;
-        if(tempDir != null && localConfigurationFile != null)
+        if(tempDir != null && configuration != null && !configuration.isEmpty())
         {
-            Configuration configuration = null;
-            try
+        	ST stringTemplate = null;
+        	String templateContent = null;
+            long lastModified;
+            
+            Collection<File> patchFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILES_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
+            
+            if(patchFiles != null)
             {
-                configuration = new PropertiesConfiguration(localConfigurationFile);
-            }
-            catch(ConfigurationException ce)
-            {
-            	//dont want to error out completely if config file is not loaded
-                ce.printStackTrace();
-            }
-        	
-        	if(configuration != null && !configuration.isEmpty())
-        	{
-            	Map<String, String> substitutionContext = JPackageManager.createSubstitutionContext(configuration);
-            	StrSubstitutor strSubstitutor = new StrSubstitutor(substitutionContext);
-    			String templateContent = null;
-                long lastModified;
-                
-                Collection<File> patchFiles = 
-                        FileUtils.listFiles(
-                            new File(tempDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME + "/" + JPackageManager.PATCH_FILES_DIR_NAME), 
-                            TEMPLATE_SUFFIX_FILE_FILTER, 
-                            DirectoryFileFilter.DIRECTORY);
-                
-                if(patchFiles != null)
+                for(File pfile : patchFiles)
                 {
-                    for(File pfile : patchFiles)
+                	logger.debug("  processing patch fileset file: " + pfile.getAbsolutePath());
+                    try
                     {
-                    	logger.debug("  processing patch fileset file: " + pfile.getAbsolutePath());
-                        try
-                        {
-                        	lastModified = pfile.lastModified();
-                        	templateContent = FileUtils.readFileToString(pfile);
-                        	templateContent = strSubstitutor.replace(templateContent);
-                            FileUtils.writeStringToFile(pfile, templateContent);
-                            pfile.setLastModified(lastModified);
-                        }
-                        catch(Exception e)
-                        {
-                            e.printStackTrace();
-                        }
+                    	lastModified = pfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(pfile);
+                    	templateContent = templateContent.replace("${", "\\${");
+                    	templateContent = templateContent.replace("@", "\\@");
+                    	stringTemplate = new ST(JPackageManagerOld.ST_GROUP, templateContent);
+//                    	stringTemplate = new ST(FileUtils.readFileToString(pfile));
+                    	JPackageManagerOld.addTemplateAttributes(stringTemplate, configuration);
+                    	templateContent = stringTemplate.render();
+                    	templateContent = templateContent.replace("\\${", "${");
+                    	templateContent = templateContent.replace("\\@", "@");
+                        FileUtils.writeStringToFile(pfile, templateContent);
+                        pfile.setLastModified(lastModified);
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
                     }
                 }
-                
-                Collection<File> scriptFiles = 
-                        FileUtils.listFiles(
-                            new File(tempDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME), 
-                            TEMPLATE_SUFFIX_FILE_FILTER, 
-                            DirectoryFileFilter.DIRECTORY);
+            }
+            
+            Collection<File> scriptFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
 
-                if(scriptFiles != null)
+            if(scriptFiles != null)
+            {
+                for(File scriptfile : scriptFiles)
                 {
-                    for(File scriptfile : scriptFiles)
+                	logger.debug("  processing script file: " + scriptfile.getAbsolutePath());
+                    try
                     {
-                    	logger.debug("  processing script file: " + scriptfile.getAbsolutePath());
-                        try
-                        {
-                        	lastModified = scriptfile.lastModified();
-                        	templateContent = FileUtils.readFileToString(scriptfile);
-                        	templateContent = strSubstitutor.replace(templateContent);
-                            FileUtils.writeStringToFile(scriptfile, templateContent);
-                            scriptfile.setLastModified(lastModified);
-                        }
-                        catch(Exception e)
-                        {
-                            e.printStackTrace();
-                        }
+                    	lastModified = scriptfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(scriptfile);
+                    	templateContent = templateContent.replace("${", "\\${");
+                    	templateContent = templateContent.replace("@", "\\@");
+                    	stringTemplate = new ST(JPackageManagerOld.ST_GROUP, templateContent);
+//                    	stringTemplate = new ST(FileUtils.readFileToString(pfile));
+                    	JPackageManagerOld.addTemplateAttributes(stringTemplate, configuration);
+                    	templateContent = stringTemplate.render();
+                    	templateContent = templateContent.replace("\\${", "${");
+                    	templateContent = templateContent.replace("\\@", "@");
+                        FileUtils.writeStringToFile(scriptfile, templateContent);
+                        scriptfile.setLastModified(lastModified);
+
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
                     }
                 }
-        	}
+            }
+        }
+        return status;
+    }    
+    
+    public static boolean configureOld(File tempDir, Configuration configuration)
+    {
+    	logger.info("PackageManager::configure()");   
+        boolean status = true;
+        if(tempDir != null && configuration != null && !configuration.isEmpty())
+        {
+            VelocityEngine velocityEngine = new VelocityEngine();
+            Properties vProps = new Properties();
+    		vProps.setProperty("resource.loader", "string");
+    		vProps.setProperty("string.resource.loader.class", "org.apache.velocity.runtime.resource.loader.StringResourceLoader");		
+    		velocityEngine.init(vProps);
+            Template template = null;
+            VelocityContext velocityContext = JPackageManagerOld.createVelocityContext(configuration);
+			StringResourceRepository stringResourceRepository = StringResourceLoader.getRepository();
+			String templateContent = null;
+            StringWriter stringWriter = null;
+            long lastModified;
+            
+            Collection<File> patchFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILES_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
+            
+            if(patchFiles != null)
+            {
+                for(File pfile : patchFiles)
+                {
+                	logger.debug("  processing patch fileset file: " + pfile.getAbsolutePath());
+                    try
+                    {
+                    	lastModified = pfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(pfile);
+                    	
+                    	
+                    	if(templateContent.matches("(\\$)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})"))
+                    	{
+                    		System.out.println("    converting $ to #");
+                    	}
+                    	
+                    	templateContent = templateContent.replaceAll("#", "\\#");
+                    	templateContent = templateContent.replaceAll("(\\$)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})", "#$2$3$4$5$6");
+                    	
+                    	stringResourceRepository.putStringResource(JPackageManagerOld.CURRENT_TEMPLATE_NAME, templateContent);
+                    	stringWriter = new StringWriter();
+                        template = velocityEngine.getTemplate(JPackageManagerOld.CURRENT_TEMPLATE_NAME);
+                        template.merge(velocityContext, stringWriter);
+                        
+                        templateContent = stringWriter.toString();
+                        
+                    	if(templateContent.matches("(#)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})"))
+                    	{
+                    		System.out.println("    converting # back to $");
+                    	}
+                        templateContent = templateContent.replaceAll("(#)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})", "\\$$2$3$4$5$6");
+                    	templateContent = templateContent.replaceAll("\\#", "#");
+
+                        FileUtils.writeStringToFile(pfile, templateContent);
+                        pfile.setLastModified(lastModified);
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            
+            Collection<File> scriptFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
+
+            if(scriptFiles != null)
+            {
+                for(File scriptfile : scriptFiles)
+                {
+                	logger.debug("  processing script file: " + scriptfile.getAbsolutePath());
+                    try
+                    {
+                    	lastModified = scriptfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(scriptfile);
+                    	templateContent = templateContent.replaceAll("#", "\\#");
+                    	templateContent = templateContent.replaceAll("(\\$)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})", "#$2$3$4$5$6");
+                    	
+                    	stringResourceRepository.putStringResource(JPackageManagerOld.CURRENT_TEMPLATE_NAME, templateContent);
+                    	stringWriter = new StringWriter();
+                        template = velocityEngine.getTemplate(JPackageManagerOld.CURRENT_TEMPLATE_NAME);
+                        template.merge(velocityContext, stringWriter);
+                        
+                        templateContent = stringWriter.toString();
+                        templateContent = templateContent.replaceAll("(#)(\\{)([^\\}]*)(\\:)([^\\{]*)(\\})", "\\$$2$3$4$5$6");
+                    	templateContent = templateContent.replaceAll("\\#", "#");
+
+                        FileUtils.writeStringToFile(scriptfile, templateContent);
+                        scriptfile.setLastModified(lastModified);
+
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+        return status;
+    }
+    
+    
+    public static boolean configureCommons(File tempDir, Configuration configuration)
+    {
+    	logger.info("PackageManager::configure()");   
+        boolean status = true;
+        if(tempDir != null && configuration != null && !configuration.isEmpty())
+        {
+        	
+        	Map<String, String> substitutionContext = JPackageManagerOld.createSubstitutionContext(configuration);
+        	StrSubstitutor strSubstitutor = new StrSubstitutor(substitutionContext);
+			String templateContent = null;
+            long lastModified;
+            
+            Collection<File> patchFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILES_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
+            
+            if(patchFiles != null)
+            {
+                for(File pfile : patchFiles)
+                {
+                	logger.debug("  processing patch fileset file: " + pfile.getAbsolutePath());
+                    try
+                    {
+                    	lastModified = pfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(pfile);
+                    	templateContent = strSubstitutor.replace(templateContent);
+                        FileUtils.writeStringToFile(pfile, templateContent);
+                        pfile.setLastModified(lastModified);
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            
+            Collection<File> scriptFiles = 
+                    FileUtils.listFiles(
+                        new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME), 
+                        TEMPLATE_SUFFIX_FILE_FILTER, 
+                        DirectoryFileFilter.DIRECTORY);
+
+            if(scriptFiles != null)
+            {
+                for(File scriptfile : scriptFiles)
+                {
+                	logger.debug("  processing script file: " + scriptfile.getAbsolutePath());
+                    try
+                    {
+                    	lastModified = scriptfile.lastModified();
+                    	templateContent = FileUtils.readFileToString(scriptfile);
+                    	templateContent = strSubstitutor.replace(templateContent);
+                        FileUtils.writeStringToFile(scriptfile, templateContent);
+                        scriptfile.setLastModified(lastModified);
+                    }
+                    catch(Exception e)
+                    {
+                        e.printStackTrace();
+                    }
+                }
+            }
         }
         return status;
     }    
     
     
+    private static ST addTemplateAttributes(ST stringTemplate, Configuration configuration)
+    {
+    	if(stringTemplate != null && configuration != null)
+    	{
+            String key = null;
+            for(Iterator<String> it=configuration.getKeys(); it.hasNext(); )
+            {
+                key = it.next();
+                stringTemplate.add(key, configuration.getString(key));
+            }
+    	}
+    	return stringTemplate;
+    }
+
+    private static VelocityContext createVelocityContext(Configuration configuration)
+    {
+    	
+    	ToolManager velocityToolManager = new ToolManager();
+    	velocityToolManager.configure("velocity-tools.xml");
+    	VelocityContext velocityContext = new VelocityContext(velocityToolManager.createContext());    	
+    	
+//    	VelocityContext velocityContext = new VelocityContext();
+    	if(configuration != null)
+    	{
+            String key = null;
+            for(Iterator<String> it=configuration.getKeys(); it.hasNext(); )
+            {
+                key = it.next();
+                velocityContext.put(key, configuration.getString(key));
+            }
+    	}
+    	return velocityContext;
+    }
+
     private static Map<String, String> createSubstitutionContext(Configuration configuration)
     {
     	Map<String, String> substitutionContextMap = null;
@@ -454,7 +644,7 @@ public class JPackageManager
 //                    false);
             
             directoryPatchManager.executePatch(
-                new File(tempDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME),
+                new File(tempDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME),
                 targetRootDir, 
                 null,
                 null, 
@@ -464,7 +654,7 @@ public class JPackageManager
         return status;
     }
     
-    public static boolean autorun(File autorunDir, Map<String, String> environmentVariableMap)
+    public static boolean autorun(File autorunDir)
     {
     	logger.info("PackageManager::autorun()");
         boolean status = true;
@@ -475,7 +665,6 @@ public class JPackageManager
             Arrays.sort(autorunFiles);
             String fileExtension = null;
             DefaultExecutor cmdExecutor = new DefaultExecutor();
-            
             
 //            String sqlScriptFilePath = null;
 //            Reader sqlScriptReader = null;
@@ -489,29 +678,10 @@ public class JPackageManager
                         fileExtension = FilenameUtils.getExtension(autorunFile.getAbsolutePath());
                         if(fileExtension != null)
                         {
-                            if(fileExtension.equalsIgnoreCase("bat"))
+                            if(fileExtension.equalsIgnoreCase("bat") || fileExtension.equalsIgnoreCase("sh"))
                             {
-                                logger.info("  executing autorun batch script: " + autorunFile.getAbsolutePath());
-                                logger.info("  executing autorun environment: " + EnvironmentUtils.toStrings(environmentVariableMap));
-                                cmdExecutor.execute(CommandLine.parse(autorunFile.getAbsolutePath()), environmentVariableMap);
-                            }
-                            else if(fileExtension.equalsIgnoreCase("sh"))
-                            {
-                            	Set<PosixFilePermission> permissionSet = new HashSet<PosixFilePermission>();
-                            	permissionSet.add(PosixFilePermission.OWNER_READ);
-                            	permissionSet.add(PosixFilePermission.OWNER_WRITE);
-                            	permissionSet.add(PosixFilePermission.OWNER_EXECUTE);
-                            	permissionSet.add(PosixFilePermission.OTHERS_READ);
-                            	permissionSet.add(PosixFilePermission.OTHERS_WRITE);
-                            	permissionSet.add(PosixFilePermission.OTHERS_EXECUTE);
-                            	permissionSet.add(PosixFilePermission.GROUP_READ);
-                            	permissionSet.add(PosixFilePermission.GROUP_WRITE);
-                            	permissionSet.add(PosixFilePermission.GROUP_EXECUTE);
-                            	Files.setPosixFilePermissions(Paths.get(autorunFile.toURI()), permissionSet);
-                            	
-                                logger.info("  executing autorun shell script: " + autorunFile.getAbsolutePath());
-                                logger.info("  executing autorun environment: " + EnvironmentUtils.toStrings(environmentVariableMap));
-                                cmdExecutor.execute(CommandLine.parse(autorunFile.getAbsolutePath()), environmentVariableMap);
+                                logger.info("  executing autorun file: " + autorunFile.getAbsolutePath());
+                                cmdExecutor.execute(CommandLine.parse(autorunFile.getAbsolutePath()));
                             }
                             else if(fileExtension.equalsIgnoreCase("sql") || fileExtension.equalsIgnoreCase("ddl"))
                             {
@@ -544,26 +714,26 @@ public class JPackageManager
     	logger.info("PackageManager::finalize()");
         boolean status = true;
 
-        Package installPackage = JPackageManager.findInstalledPackage(packageName);
+        Package installPackage = JPackageManagerOld.findInstalledPackage(packageName);
         if(installPackage == null)
         {
             //this is a new install
             installPackage = 
-                    JPackageManager.createInstalledPackage(
+                    JPackageManagerOld.createInstalledPackage(
                         packageName, 
                         packageVersion, 
                         targetRootDir.getAbsolutePath());
-            JPackageManager.marshallToFile(JPackageManager.findInstalledPackages(), packageManagerDataDir.getAbsolutePath() + "/" + PACKAGE_FILE_NAME);
+            JPackageManagerOld.marshallToFile(JPackageManagerOld.findInstalledPackages(), packageManagerDataDir.getAbsolutePath() + "/" + PACKAGE_FILE_NAME);
         }
         else
         {
             installPackage.setVersion(packageVersion);
             installPackage.setInstallTimestamp(System.currentTimeMillis());
-            JPackageManager.marshallToFile(JPackageManager.findInstalledPackages(), JPackageManager.PACKAGE_MANAGER_DATA_DIR_NAME + "/" + PACKAGE_FILE_NAME);
+            JPackageManagerOld.marshallToFile(JPackageManagerOld.findInstalledPackages(), JPackageManagerOld.PACKAGE_MANAGER_DATA_DIR_NAME + "/" + PACKAGE_FILE_NAME);
         }
         logger.info("  recorded package installation.");
 
-        JPackageManager.archivePackage(installPackage, packageManagerDataDir);
+        JPackageManagerOld.archivePackage(installPackage, packageManagerDataDir);
         logger.info("  archived pacakge.");
         
         return status;
@@ -599,13 +769,13 @@ public class JPackageManager
 //                archivePackageDir.mkdirs();
 //            }
             
-            File archivePackageInstallDir = new File(archivePackageDir.getAbsolutePath() + "/" + JPackageManager.INSTALL_DIR_NAME);
+            File archivePackageInstallDir = new File(archivePackageDir.getAbsolutePath() + "/" + JPackageManagerOld.INSTALL_DIR_NAME);
             if(!archivePackageInstallDir.exists())
             {
             	archivePackageInstallDir.mkdirs();
             }
             
-            File archivePackageUninstallDir = new File(archivePackageDir.getAbsolutePath() + "/" + JPackageManager.UNINSTALL_DIR_NAME);
+            File archivePackageUninstallDir = new File(archivePackageDir.getAbsolutePath() + "/" + JPackageManagerOld.UNINSTALL_DIR_NAME);
             if(!archivePackageUninstallDir.exists())
             {
             	archivePackageUninstallDir.mkdirs();
@@ -613,26 +783,26 @@ public class JPackageManager
             
             // metadata archive dir
             FileUtils.copyDirectory(
-                    new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManager.METADATA_DIR_NAME), 
-                    new File(archivePackageDir.getAbsolutePath()+ "/" + JPackageManager.METADATA_DIR_NAME));
+                    new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManagerOld.METADATA_DIR_NAME), 
+                    new File(archivePackageDir.getAbsolutePath()+ "/" + JPackageManagerOld.METADATA_DIR_NAME));
                 
             // install archive dir
             FileUtils.copyDirectory(
-                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManager.AUTORUN_DIR_NAME + "/" + JPackageManager.INSTALL_DIR_NAME), 
-                new File(archivePackageInstallDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME));
+                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManagerOld.AUTORUN_DIR_NAME + "/" + JPackageManagerOld.INSTALL_DIR_NAME), 
+                new File(archivePackageInstallDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME));
             
             FileUtils.copyFileToDirectory(
-                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManager.PATCH_DIR_NAME + "/" + JPackageManager.PATCH_FILE_NAME), 
-                new File(archivePackageInstallDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME));
+                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILE_NAME), 
+                new File(archivePackageInstallDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME));
             
             // uninstall archive dir
             FileUtils.copyDirectory(
-                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManager.AUTORUN_DIR_NAME + "/" + JPackageManager.UNINSTALL_DIR_NAME), 
-                new File(archivePackageUninstallDir.getAbsolutePath() + "/" + JPackageManager.AUTORUN_DIR_NAME));
+                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManagerOld.AUTORUN_DIR_NAME + "/" + JPackageManagerOld.UNINSTALL_DIR_NAME), 
+                new File(archivePackageUninstallDir.getAbsolutePath() + "/" + JPackageManagerOld.AUTORUN_DIR_NAME));
             
             FileUtils.copyFileToDirectory(
-                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManager.PATCH_DIR_NAME + "/" + JPackageManager.PATCH_FILE_NAME), 
-                new File(archivePackageUninstallDir.getAbsolutePath() + "/" + JPackageManager.PATCH_DIR_NAME));
+                new File(packageManagerDataDir.getAbsolutePath() + "/" + TEMP_INSTALL_DIR_NAME + "/" + JPackageManagerOld.PATCH_DIR_NAME + "/" + JPackageManagerOld.PATCH_FILE_NAME), 
+                new File(archivePackageUninstallDir.getAbsolutePath() + "/" + JPackageManagerOld.PATCH_DIR_NAME));
             
         }
         catch(Exception e)
@@ -714,7 +884,7 @@ public class JPackageManager
     private static Collection<Package> findInstalledPackages(String regex)
     {
         List<Package> installPackageList = new ArrayList<Package>();
-        for(Package installPackage : JPackageManager.findInstalledPackages())
+        for(Package installPackage : JPackageManagerOld.findInstalledPackages())
         {
             if(installPackage.getName().matches(regex))
             {
@@ -731,11 +901,11 @@ public class JPackageManager
     
     private static Package createInstalledPackage(String name, String version, String rootDirectory)
     {
-        Package installPackage = JPackageManager.findInstalledPackage(name);
+        Package installPackage = JPackageManagerOld.findInstalledPackage(name);
         if(installPackage == null)
         {
             installPackage = new Package(name, version, rootDirectory, System.currentTimeMillis());
-            JPackageManager.addInstalledPackage(installPackage);
+            JPackageManagerOld.addInstalledPackage(installPackage);
         }
         return installPackage;
     }
@@ -758,7 +928,7 @@ public class JPackageManager
     public static VersionNumber getInstalledVersionNumber(String packageName)
     {
         VersionNumber versionNumber = null;
-        Package installPackage = JPackageManager.findInstalledPackage(packageName);
+        Package installPackage = JPackageManagerOld.findInstalledPackage(packageName);
         if(installPackage != null)
         {
             versionNumber = installPackage.getVersionNumber();
@@ -1075,7 +1245,7 @@ public class JPackageManager
 			
 			Configuration configuration = new PropertiesConfiguration(new File("C:/dev/workbench/paradigm-workspace/jpackage-manager/install.properties"));
 			
-        	Map<String, String> substitutionContext = JPackageManager.createSubstitutionContext(configuration);
+        	Map<String, String> substitutionContext = JPackageManagerOld.createSubstitutionContext(configuration);
         	StrSubstitutor strSubstitutor = new StrSubstitutor(substitutionContext);
 	        
 			String strTemplate = FileUtils.readFileToString(new File("C:/dev/workbench/paradigm-workspace/jpackage-manager/domain.sh"));
